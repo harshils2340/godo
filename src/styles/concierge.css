@@ -287,25 +287,32 @@
 .cg-row { display: flex; align-items: baseline; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .cg-day { margin: 9px 0 0; font-size: 12.5px; font-weight: 650; color: var(--ink-soft); }
 
-.cg-slots { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
+.cg-slots { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+/*
+  A row was three ideas fighting one line: the time and the item's own name shared a flex column against price,
+  seats and a Book button in another, and on a phone-width card ("Sabotage! - 90 Minute Adventure") lost the
+  fight and cut off mid-word while a plain "12:15 PM" wrapped onto two lines anyway. Two rows instead of one
+  column split in two: the time and what it is get the card's full width first, price/seats/Book get their own
+  line under it, right-aligned the way a receipt lists a total under its line items rather than beside them.
+*/
 .cg-slot {
-  display: flex; align-items: center; gap: 9px;
+  display: flex; flex-wrap: wrap; align-items: center; row-gap: 7px; column-gap: 9px;
   background: var(--surface-2);
   border-radius: 12px;
-  padding: 8px 9px 8px 12px;
+  padding: 10px 12px;
 }
-.cg-slot-when { flex: 1; min-width: 0; }
-.cg-slot-time { font-size: 15px; font-weight: 700; letter-spacing: -.005em; }
+.cg-slot-when { flex: 1 1 100%; min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 7px; }
+.cg-slot-time { font-size: 15.5px; font-weight: 700; letter-spacing: -.005em; white-space: nowrap; }
 .cg-slot-when small {
-  display: block; color: var(--ink-soft); font-size: 12px; margin-top: 1px;
+  display: block; flex: 1 1 auto; min-width: 60%; color: var(--ink-soft); font-size: 12.5px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.cg-slot-when em { font-style: normal; font-weight: 600; font-size: 11.5px; margin-left: 7px; }
+.cg-slot-when em { flex: none; font-style: normal; font-weight: 600; font-size: 11.5px; }
 .cg-off { color: #9A6B08; }
 .cg-onthehour { color: var(--accent); }
 
-.cg-slot-right { flex: none; display: flex; align-items: center; gap: 7px; }
-.cg-price { font-weight: 700; color: var(--accent); font-size: 14.5px; }
+.cg-slot-right { flex: 1 1 100%; display: flex; align-items: center; gap: 7px; }
+.cg-price { font-weight: 700; color: var(--accent); font-size: 14.5px; margin-right: auto; }
 .cg-price em { display: block; font-style: normal; font-weight: 400; color: var(--ink-soft); font-size: 12px; margin-top: 1px; }
 
 .cg-seats { color: var(--open); background: var(--open-bg); font-size: 11px; font-weight: 650; padding: 3px 7px; border-radius: 999px; white-space: nowrap; }
@@ -476,6 +483,39 @@
 
 .cg-framed { position: absolute; inset: 0; z-index: 20; background: var(--surface); }
 .cg-framed .cg-thread { max-width: none; width: 100%; box-shadow: none; }
+.cg-embed {
+  position: relative;
+  inset: auto;
+  z-index: 0;
+  flex: 1 1 auto;
+  min-height: calc(100vh - var(--hdr-top, 80px) - 1px);
+  background: #fff;
+}
+.cg-embed .cg-thread {
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+  box-shadow: none;
+  background: transparent;
+  min-height: calc(100vh - var(--hdr-top, 80px) - 1px);
+}
+.cg-embed .cg-top {
+  justify-content: flex-end;
+  background: transparent;
+  border-bottom: 0;
+  padding: 10px 8px 0;
+}
+/*
+  `.screen` is the phone either way `framed` is passed: a real mobile browser, where it is the whole viewport
+  and the mockup's own fake status bar is already hidden by `app.css`'s own media query, or the desktop mockup,
+  where `<StatusBar />` renders above this overlay in the same flex column and `inset: 0` below drew straight
+  over it — the clock, signal and battery vanished the instant the agent opened, which is the single biggest
+  reason the mockup stopped reading as a phone. Reserving its height only above the real device's own 1024px
+  breakpoint leaves a real phone untouched and gives the mockup its status bar back.
+*/
+@media (min-width: 1025px) {
+  .cg-framed { top: 40px; }
+}
 
 @media (max-width: 900px) {
   .cg { background: var(--ground); }

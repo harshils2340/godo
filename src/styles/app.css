@@ -118,6 +118,7 @@ input,textarea{font:inherit;color:inherit;}
 .pitchfoot{margin:22px 0 0;color:var(--ink-soft);font-size:14px;line-height:1.5;}
 
 .device{
+  position:relative;
   width:390px; flex:none; background:var(--bezel); padding:10px; border-radius:48px;
   box-shadow:
     0 0 0 1px rgba(255,255,255,.08) inset,
@@ -127,6 +128,26 @@ input,textarea{font:inherit;color:inherit;}
 .screen{
   position:relative; width:370px; height:800px; overflow:hidden;
   border-radius:38px; background:var(--app-bg); display:flex; flex-direction:column;
+}
+/*
+  The two details that make a rounded black rectangle read as a phone rather than a wireframe placeholder: a
+  dynamic island over the status bar, and a home indicator at the foot of the screen. Real hardware on a real
+  phone already has both — a mobile browser never reaches this file's `.device` at all, only `.screen` at
+  100vw, so these are wired to the same 1025px floor as the mockup itself and never doubled up on a real
+  device.
+*/
+@media (min-width:1025px){
+  .device::before{
+    content:""; position:absolute; top:22px; left:50%; transform:translateX(-50%);
+    width:96px; height:26px; border-radius:16px; background:#000;
+    z-index:30; pointer-events:none;
+    box-shadow:0 0 0 1px rgba(255,255,255,.06) inset;
+  }
+  .screen::after{
+    content:""; position:absolute; left:50%; bottom:8px; transform:translateX(-50%);
+    width:120px; height:4px; border-radius:3px; background:rgba(0,0,0,.75);
+    z-index:30; pointer-events:none;
+  }
 }
 
 @media (max-width:1024px){
@@ -728,8 +749,30 @@ video.photo{background:#000;}
 
 .svcpic{width:calc(100% + 28px);margin:0 -14px;height:150px;object-fit:cover;display:block;border-radius:var(--r-m) var(--r-m) 0 0;}
 
-@media (min-width:1025px){.stage{grid-template-columns:1fr;justify-items:center;align-items:center;position:relative;height:100vh;min-height:0;padding:0;overflow:hidden;background:#F3F1EE !important;color-scheme:light;}}
-.stageback{position:absolute;top:24px;left:24px;}
+@media (min-width:1025px){
+  .stage{
+    grid-template-columns:1fr;justify-items:center;align-items:center;position:relative;
+    height:100vh;min-height:0;padding:0;overflow:hidden;color-scheme:light;
+    /* A flat #F3F1EE read as a placeholder background rather than a place the phone sits; a soft radial
+       glow under the device plus a faint vignette at the edges is the same trick every phone-mockup marketing
+       page uses to keep the eye on the screen instead of the room around it. */
+    background:
+      radial-gradient(120% 90% at 50% 38%, #FBFAF8 0%, #F3F1EE 55%, #E9E6E0 100%);
+  }
+}
+.stageback{
+  position:absolute;top:24px;left:24px;display:inline-flex;align-items:center;gap:7px;
+  padding:10px 18px 10px 14px;
+  /*
+    `.wghost`'s background is a hard-coded white with no color of its own, so it borrows whatever `--ink` the
+    page's dark/light theme happens to be running: on a guest with dark mode on, that put near-white text on
+    this button's white pill, which is invisible rather than merely low-contrast. The stage around it renders
+    in forced light mode regardless of the guest's own theme (`color-scheme:light` above), so this button's
+    own colors are pinned to match it rather than the theme the button happens to render on top of.
+  */
+  color:#17301B;
+}
+.stageback svg{width:15px;height:15px;flex:none;}
 
 /* intents, compare */
 .cta.small{padding:9px 16px;font-size:14px;border-radius:999px;min-height:0;}
