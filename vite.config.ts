@@ -23,8 +23,11 @@ function cspApiOrigin(mode: string): Plugin {
   };
 }
 
-export default defineConfig(({ mode }) => ({
-  base: "/godo/",
+export default defineConfig(({ mode }) => {
+  const vite = loadEnv(mode, ".", "VITE_");
+  return {
+  // Vercel and local builds are the site root. GitHub Pages sets VITE_BASE=/godo/.
+  base: vite.VITE_BASE || "/",
   plugins: [react(), cspApiOrigin(mode)],
   server: {
     // Vite's default host resolves to the IPv6 loopback on this machine, so a browser that reaches
@@ -53,4 +56,5 @@ export default defineConfig(({ mode }) => ({
       ],
     },
   },
-}));
+  };
+});

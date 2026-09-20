@@ -606,8 +606,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       // No fix. A clock city is the fallback, labelled as that city, not a 40 km circle on an IP centroid.
       const zone = metroFromTimeZone();
-      if (start.guess?.kind === "metro") {
-        apply(start.guess);
+      const clock = start.guess;
+      if (clock?.kind === "metro") {
+        apply(clock);
         return;
       }
       if (zone) {

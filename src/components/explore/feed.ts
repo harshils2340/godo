@@ -43,7 +43,7 @@ export function atMetro(u: Unclaimed, metroId: string, radiusKm = NEAR_RADIUS_KM
   if (u.metroId === metroId) return true;
   const c = metroCoords(metroId);
   if (!c) return false;
-  return kmToPlace(u, { label: metroId, lat: c.lat, lon: c.lng }) <= radiusKm;
+  return kmToPlace(u, { label: metroId, sub: "", lat: c.lat, lon: c.lng }) <= radiusKm;
 }
 
 /** Reachable for a day out: within DRIVE_RADIUS_KM of a picked point, or anywhere in a picked region. */

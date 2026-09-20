@@ -199,8 +199,8 @@ function rememberGuess(g: Guess): void {
 }
 
 /** A GPS fix, stored so the next visit opens on it without waiting for another prompt. */
-export function rememberCoords(lat: number, lon: number): Guess {
-  const g: Guess = { kind: "point", place: { label: "Near me", sub: "Current location", lat, lon } };
+export function rememberCoords(lat: number, lon: number): NonNullable<Guess> {
+  const g = { kind: "point" as const, place: { label: "Near me", sub: "Current location", lat, lon } };
   rememberGuess(g);
   return g;
 }
@@ -233,13 +233,14 @@ export type Opening = { guess: Guess; chosen: boolean; recheck: boolean };
  * catalog on `metroId === "toronto"` dumps KW shops and downtown Toronto into one bucket with no distance.
  * Wait, then use the GPS pin. The clock city is only the fallback when the browser will not give a fix.
  */
-export function openingFeed(open: Opening): Guess | { kind: "wait" } {
-  if (open.guess?.kind === "point") {
+export function openingFeed(open: Opening): NonNullable<Guess> | { kind: "wait" } {
+  const g = open.guess;
+  if (g?.kind === "point") {
     // A GPS pin or a town they typed. An IP city centroid is not a pin: wait for GPS.
-    if (open.chosen || open.guess.place.label === "Near me") return open.guess;
+    if (open.chosen || g.place.label === "Near me") return g;
     return { kind: "wait" };
   }
-  if (open.guess?.kind === "metro" && open.chosen) return open.guess;
+  if (g?.kind === "metro" && open.chosen) return g;
   return { kind: "wait" };
 }
 
