@@ -1,0 +1,7 @@
+{
+  "framework": null,
+  "installCommand": "npm install",
+  "buildCommand": "node scripts/vercel-static.cjs",
+  "outputDirectory": "dist",
+  "rewrites": [{ "source": "/((?!assets/).*)", "destination": "/index.html" }]
+}

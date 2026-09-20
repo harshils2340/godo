@@ -1,0 +1,8 @@
+{
+  "name": "godo",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/vercel-static.cjs",
+    "postinstall": "node scripts/vercel-static.cjs --install-vite"
+  }
+}
