@@ -11,6 +11,27 @@ const path = require("path");
 const root = process.cwd();
 const skip = new Set(["dist", ".git", "node_modules", ".vercel"]);
 
+function rewriteBase(dir) {
+  const walk = (p) => {
+    for (const ent of fs.readdirSync(p, { withFileTypes: true })) {
+      const fp = path.join(p, ent.name);
+      if (ent.isDirectory()) {
+        walk(fp);
+        continue;
+      }
+      if (!/\.(html|js|css|json|svg|xml)$/.test(ent.name)) continue;
+      const src = fs.readFileSync(fp, "utf8");
+      if (!src.includes("/godo/")) continue;
+      const next = src
+        .replaceAll("https://harshils2340.github.io/godo/", "\0CANON\0")
+        .replaceAll("/godo/", "/")
+        .replaceAll("\0CANON\0", "https://harshils2340.github.io/godo/");
+      if (next !== src) fs.writeFileSync(fp, next);
+    }
+  };
+  walk(dir);
+}
+
 function copyToDist() {
   const dest = path.join(root, "dist");
   fs.rmSync(dest, { recursive: true, force: true });
@@ -19,6 +40,7 @@ function copyToDist() {
     if (skip.has(name)) continue;
     fs.cpSync(path.join(root, name), path.join(dest, name), { recursive: true });
   }
+  rewriteBase(dest);
 }
 
 function installViteShim() {
