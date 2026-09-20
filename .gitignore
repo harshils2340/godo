@@ -1,0 +1,33 @@
+node_modules
+dist
+.env
+.env.*
+!.env.example
+!.env.production
+*.log
+.DS_Store
+.vite
+
+backend/data/*.db
+backend/data/*.db-wal
+backend/data/*.db-shm
+backend/data/batches/
+backend/data/claim-secret.txt
+backend/data/outreach-list.csv
+backend/data/florida-call-list.csv
+backend/data/pagecache/
+backend/data/osm/
+backend/data/aisearch/
+backend/data/aisearch-ledger.txt
+backend/data/coverage-audit.csv
+
+# Neon CLI link to the project (ids only, but per-checkout)
+.neon
+
+# The static pages a search engine reads are built into dist by scripts/build-pages.mts, not committed:
+# about 14,500 files that every sync would rewrite. They are reproducible from public/catalog.json and public/o.
+public/p/
+public/l/
+public/sitemap.xml
+public/sitemap-*.xml
+public/robots.txt

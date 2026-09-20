@@ -1,0 +1,201 @@
+import { load } from "cheerio";
+import { fetchHtml, sleep } from "../scrape/fetch.ts";
+import { renderPage } from "../scrape/render.ts";
+
+/**
+ * Site crawl for enrichment. Fetches the operator's own pages only, honoring robots.txt via fetchHtml.
+ * Social networks are login-walled and forbid scraping, so we collect their public handles from the
+ * operator's links and stop there.
+ */
+
+export type CrawledPage = { url: string; title: string; text: string };
+export type SocialLinks = Partial<Record<"instagram" | "facebook" | "tiktok" | "youtube" | "yelp" | "tripadvisor" | "google", string>>;
+export type CrawlResult = { pages: CrawledPage[]; social: SocialLinks; bookingVendor: string | null };
+
+/** A bot wall rendered as a page. Nothing behind it is readable, so it must never be sent to the model. */
+const CHALLENGE = /performing security verification|verify you are not a bot|checking your browser|just a moment|enable javascript and cookies|access denied|attention required/i;
+const WANT = /about|price|pricing|rate|cost|tour|trip|rental|rent|book|reserv|faq|contact|hour|service|package|experience|adventure|charter|lesson|group|party|event|policy|waiver|safety|require/i;
+const SKIP = /\.(pdf|jpg|jpeg|png|gif|svg|webp|mp4|zip)$|\/(wp-json|feed|tag|category|author|cart|checkout|login|account|blog\/page)\b|#|\?/i;
+const SOCIAL: [keyof SocialLinks, RegExp][] = [
+  ["instagram", /instagram\.com\/([A-Za-z0-9_.]+)/i],
+  ["facebook", /facebook\.com\/([A-Za-z0-9_.\-]+)/i],
+  ["tiktok", /tiktok\.com\/@([A-Za-z0-9_.]+)/i],
+  ["youtube", /youtube\.com\/(?:@|channel\/|c\/|user\/)([A-Za-z0-9_.\-]+)/i],
+  ["yelp", /yelp\.[a-z.]+\/biz\/([A-Za-z0-9_\-]+)/i],
+  ["tripadvisor", /tripadvisor\.[a-z.]+\/([A-Za-z0-9_\-]+\.html)/i],
+  ["google", /(g\.page\/[A-Za-z0-9_\-]+|goo\.gl\/maps\/[A-Za-z0-9_\-]+|google\.com\/maps\/place\/[^"'\s]+)/i],
+];
+const VENDORS: [string, RegExp][] = [
+  ["fareharbor", /fareharbor\.com/i], ["peek", /peek\.com|peekpro/i], ["checkfront", /checkfront\.com/i],
+  ["rezdy", /rezdy\.com/i], ["xola", /xola\.com/i], ["bookeo", /bookeo\.com/i], ["resova", /resova\.com/i],
+  ["booksy", /booksy\.com/i], ["square", /squareup\.com\/appointments|square\.site/i], ["simplybook", /simplybook\.me/i],
+  ["bookinglayer", /bookinglayer/i], ["rezgo", /rezgo\.com/i], ["singenuity", /singenuity/i],
+];
+
+/** Tags whose text belongs to the line around them. `<strong>$130</strong>` is part of "Hourly $130", not a block of its own. */
+const INLINE = new Set(["a", "abbr", "b", "bdi", "bdo", "cite", "code", "data", "del", "dfn", "em", "font", "i", "ins", "kbd", "label", "mark", "q", "s", "samp", "small", "span", "strong", "sub", "sup", "time", "u", "var"]);
+const BLOCKS = "body, h1, h2, h3, h4, h5, h6, p, li, td, th, dt, dd, div, section, article, main, aside, blockquote, figcaption, summary, pre, address, button, caption, legend";
+
+/**
+ * An element's own text together with its inline descendants; block children get their own line. Until
+ * 2026-09-14 this dropped every child element, so `<li><span>Hourly</span><strong>$130</strong></li>` reached
+ * the model as "Hourly" and the extractor reported "prices not stated" for sites that print them in bold.
+ */
+function ownText($: ReturnType<typeof load>, el: any): string {
+  const parts: string[] = [];
+  for (const n of $(el).contents().toArray() as any[]) {
+    if (n.type === "text") parts.push(n.data || "");
+    else if (n.type === "tag") {
+      const name = String(n.name || "").toLowerCase();
+      if (name === "br") parts.push(" ");
+      else if (INLINE.has(name)) parts.push(" " + ownText($, n) + " ");
+    }
+  }
+  return parts.join("");
+}
+
+export function visibleText(html: string): { title: string; text: string } {
+  const $ = load(html);
+  $("script, style, noscript, svg, iframe, nav, footer, header, form, [aria-hidden='true']").remove();
+  const title = $("title").first().text().trim();
+  const parts: string[] = [];
+  $(BLOCKS).each((_, el) => {
+    const t = ownText($, el).replace(/\s+/g, " ").replace(/\s+([,.;:!?)])/g, "$1").trim();
+    if (t.length >= 2) parts.push(t);
+  });
+  const seen = new Set<string>();
+  const lines = parts.filter((p) => (seen.has(p) ? false : (seen.add(p), true)));
+  return { title, text: lines.join("\n").slice(0, 14000) };
+}
+
+export async function crawlSite(website: string, maxPages = 25): Promise<CrawlResult> {
+  const start = website.startsWith("http") ? website : "https://" + website;
+  const origin = new URL(start).origin;
+  let home = await fetchHtml(start).catch(() => ({ status: 0, html: "", finalUrl: start }));
+  const pages: CrawledPage[] = [];
+  const social: SocialLinks = {};
+  let bookingVendor: string | null = null;
+  // A JavaScript shell, a bot stub or a challenge page reads as nothing. Render it in a real browser before giving up.
+  let rendered = false;
+  if (home.status !== 200 || !home.html || visibleText(home.html).text.length < 400) {
+    const r = await renderPage(start);
+    if (r && visibleText(r.html).text.length >= 200 && !CHALLENGE.test(r.html)) {
+      home = { status: 200, html: r.html, finalUrl: r.finalUrl };
+      rendered = true;
+    }
+  }
+  if (home.status !== 200 || !home.html) return { pages, social, bookingVendor };
+
+  const queue: string[] = [];
+  const seen = new Set<string>([start]);
+  const harvest = (html: string, baseUrl: string) => {
+    const $ = load(html);
+    for (const [k, re] of VENDORS) if (!bookingVendor && re.test(html)) bookingVendor = k;
+    $("a[href]").each((_, el) => {
+      const href = $(el).attr("href") || "";
+      for (const [k, re] of SOCIAL) {
+        const m = href.match(re);
+        if (m && !social[k]) social[k] = m[1];
+      }
+      try {
+        const abs = new URL(href, baseUrl);
+        if (abs.origin !== origin || SKIP.test(abs.pathname + abs.search + abs.hash)) return;
+        const clean = abs.origin + abs.pathname.replace(/\/$/, "");
+        if (!seen.has(clean) && !queue.includes(clean)) {
+          // Breadth-first over the whole site, but likely service and pricing pages go to the front of the line.
+          if (WANT.test(abs.pathname + " " + $(el).text())) queue.unshift(clean);
+          else queue.push(clean);
+        }
+      } catch {
+        /* ignore */
+      }
+    });
+  };
+
+  const homeText = visibleText(home.html);
+  pages.push({ url: home.finalUrl || start, ...homeText });
+  harvest(home.html, home.finalUrl || start);
+
+  while (queue.length && pages.length < maxPages) {
+    const url = queue.shift()!;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    await sleep(120);
+    let res = await fetchHtml(url).catch(() => null);
+    let t = res && res.status === 200 && res.html ? visibleText(res.html) : { title: "", text: "" };
+    if (rendered && t.text.length < 200 && pages.length < 8) {
+      const r = await renderPage(url, 12000);
+      if (r) {
+        res = { status: 200, html: r.html, finalUrl: r.finalUrl };
+        t = visibleText(r.html);
+      }
+    }
+    if (!res || res.status !== 200 || !res.html) continue;
+    if (t.text.length < 200) continue;
+    pages.push({ url: res.finalUrl || url, ...t });
+    harvest(res.html, res.finalUrl || url);
+  }
+  return { pages, social, bookingVendor };
+}
+
+/* ---------- what the model actually reads ---------- */
+
+const PAGE_SCORE: [RegExp, number][] = [
+  [/price|pricing|rate|cost|fee/i, 6],
+  [/book|reserv|schedule|availability/i, 4],
+  [/faq|question|policy|policies|waiver|rule|require|safety|terms|cancel|refund|weather/i, 5],
+  [/tour|trip|rental|rent|charter|lesson|class|package|experience|adventure|session|ride|flight|jump|cruise|room|lane/i, 3],
+  [/service|activit|what-we-offer|offer/i, 3],
+  [/about|hour|contact|location|direction|find-us/i, 2],
+  [/blog|news|gallery|photo|video|review|testimonial|career|job|team|staff|press|gift|shop|cart|privacy|sitemap|login/i, -6],
+];
+
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 3.8);
+}
+
+/**
+ * Pick the handful of pages that carry prices, rules and policies, drop lines that repeat across pages
+ * (menus, footers, cookie banners), and cap the total so one site costs a few thousand tokens, not fifty.
+ */
+export function selectPages(pages: CrawledPage[], opts: { maxPages?: number; maxChars?: number; perPageChars?: number } = {}): CrawledPage[] {
+  const maxPages = opts.maxPages ?? 7;
+  const maxChars = opts.maxChars ?? 30000;
+  const perPageChars = opts.perPageChars ?? 8000;
+  if (!pages.length) return [];
+  // Lines seen on 2+ pages are chrome, not content.
+  const counts = new Map<string, number>();
+  for (const pg of pages) for (const line of new Set(pg.text.split("\n"))) counts.set(line, (counts.get(line) || 0) + 1);
+  const dedupe = (t: string) =>
+    t
+      .split("\n")
+      .filter((line) => line.length >= 3 && (pages.length < 2 || (counts.get(line) || 0) < 2 || /\$\s?\d/.test(line)))
+      .filter((line) => !/^(home|menu|close|search|login|sign in|cart|©|copyright|all rights reserved|skip to|cookie|accept|privacy policy|terms)/i.test(line))
+      .join("\n");
+  const scored = pages.map((pg, i) => {
+    let score = i === 0 ? 3 : 0;
+    const key = pg.url + " " + pg.title;
+    for (const [re, n] of PAGE_SCORE) if (re.test(key)) score += n;
+    const money = (pg.text.match(/\$\s?\d/g) || []).length;
+    score += Math.min(6, money);
+    if (/\b(must be|minimum age|years old|weight|licen[cs]e|cancel|refund|deposit|waiver)\b/i.test(pg.text)) score += 3;
+    return { pg, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  const out: CrawledPage[] = [];
+  let used = 0;
+  for (const { pg, score } of scored) {
+    if (out.length >= maxPages || score < 0) break;
+    const text = dedupe(pg.text).slice(0, perPageChars);
+    if (text.length < 120) continue;
+    if (used + text.length > maxChars) {
+      const room = maxChars - used;
+      if (room < 1500) break;
+      out.push({ ...pg, text: text.slice(0, room) });
+      break;
+    }
+    out.push({ ...pg, text });
+    used += text.length;
+  }
+  return out.length ? out : [{ ...pages[0], text: dedupe(pages[0].text).slice(0, perPageChars) }];
+}
